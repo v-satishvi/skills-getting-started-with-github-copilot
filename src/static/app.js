@@ -4,10 +4,19 @@ document.addEventListener("DOMContentLoaded", () => {
   const signupForm = document.getElementById("signup-form");
   const messageDiv = document.getElementById("message");
 
+  function escapeHtml(value) {
+    const element = document.createElement("span");
+    element.textContent = value;
+    return element.innerHTML;
+  }
+
   // Function to fetch activities from API
   async function fetchActivities() {
     try {
-      const response = await fetch("/activities");
+      const response = await fetch("/activities", { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`Failed to load activities: ${response.status}`);
+      }
       const activities = await response.json();
 
       // Clear loading message
@@ -21,7 +30,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const spotsLeft = details.max_participants - details.participants.length;
         const participantsMarkup = details.participants.length
-          ? details.participants.map((participant) => `<li>${participant}</li>`).join("")
+          ? details.participants.map((participant) => `
+              <li class="participant-item">
+                <span class="participant-email">${escapeHtml(participant)}</span>
+                <button
+                  type="button"
+                  class="remove-participant"
+                  data-activity="${escapeHtml(name)}"
+                  data-email="${escapeHtml(participant)}"
+                  aria-label="Unregister ${escapeHtml(participant)}"
+                  title="Unregister participant"
+                >&#128465;</button>
+              </li>
+            `).join("")
           : '<li class="no-participants">No participants yet</li>';
 
         activityCard.innerHTML = `
@@ -50,6 +71,39 @@ document.addEventListener("DOMContentLoaded", () => {
       console.error("Error fetching activities:", error);
     }
   }
+
+  activitiesList.addEventListener("click", async (event) => {
+    const removeButton = event.target.closest(".remove-participant");
+    if (!removeButton) return;
+
+    const activity = removeButton.dataset.activity;
+    const email = removeButton.dataset.email;
+
+    try {
+      const response = await fetch(
+        `/activities/${encodeURIComponent(activity)}/unregister?email=${encodeURIComponent(email)}`,
+        { method: "DELETE" }
+      );
+      const result = await response.json();
+
+      if (response.ok) {
+        messageDiv.textContent = result.message;
+        messageDiv.className = "success";
+        await fetchActivities();
+      } else {
+        messageDiv.textContent = result.detail || "An error occurred";
+        messageDiv.className = "error";
+      }
+
+      messageDiv.classList.remove("hidden");
+      setTimeout(() => messageDiv.classList.add("hidden"), 5000);
+    } catch (error) {
+      messageDiv.textContent = "Failed to unregister participant.";
+      messageDiv.className = "error";
+      messageDiv.classList.remove("hidden");
+      console.error("Error unregistering participant:", error);
+    }
+  });
 
   // Handle form submission
   signupForm.addEventListener("submit", async (event) => {
